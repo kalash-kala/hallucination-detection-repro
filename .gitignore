@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+# generated artifacts (large; recreated by the pipeline or restored from the artifacts tarball)
+recovery-gaps-data/data/ranking_experiment_*/cache/
+recovery-gaps-data/data/ranking_experiment_*/classifier/
+results/lapeigvals_baseline/diags/
+results/sinkhole/value_norms/
+results/snne_baseline/scores/
+results/snne_baseline/scores_train/
+results/per_category_analysis/
+results/feature_analysis/
+results/snne_combo/
+logs/
+*.log
