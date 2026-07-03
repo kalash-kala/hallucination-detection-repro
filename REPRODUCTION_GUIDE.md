@@ -163,8 +163,10 @@ tar -I zstd -xf repro_artifacts_20260703.tar.zst -C /path/to/this/package
 
 ## 7. Caveats
 
-- GPU stage needs ≥80 GB VRAM for gemma-3-12b-it at bf16 with eager attention
-  (attention capture is memory-hungry); llama/mistral/qwen fit comfortably.
+- GPU requirements are modest: the extraction runs batch-1 teacher-forced forward
+  passes over short sequences, so memory ≈ model weights. gemma-3-12b-it at bf16
+  needs ~24 GB (a 32–40 GB card is comfortable); llama/mistral/qwen (7–8B) fit on
+  24 GB. (The original run used one A100 80GB, but that headroom is not required.)
 - HF gated-model access is required for Llama and Gemma checkpoints.
 - SNNE scoring downloads DeBERTa-v2-xxlarge-MNLI on first run.
 - `per_category_analysis.py` skips `classifier_a` automatically when distractor

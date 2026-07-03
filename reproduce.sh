@@ -10,7 +10,8 @@
 #   ./reproduce.sh all        everything in order
 #
 # Prerequisites: the two conda envs in environment/*.yml, and (for `extract`)
-# one >=80GB GPU with HF access to the four models. Alternatively, restore the
+# one GPU with ~32 GB VRAM (gemma-3-12b bf16 weights ~24 GB; the smaller models
+# fit on 24 GB) plus HF access to the four models. Alternatively, restore the
 # precomputed artifacts tarball (see REPRODUCTION_GUIDE.md) and skip straight
 # to `prep`.
 # ============================================================================
