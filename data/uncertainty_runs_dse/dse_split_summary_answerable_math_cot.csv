@@ -1,0 +1,7 @@
+pair,n,dse_threshold,correct_n,correct_pct,incorrect_n,incorrect_pct,correct_high_n,correct_high_pct,correct_low_n,correct_low_pct,incorrect_high_n,incorrect_high_pct,incorrect_low_n,incorrect_low_pct,boundary_n,boundary_pct
+gemma3_12b_answerable_math_cot,2573,0.5027,2314,89.93,259,10.07,2220,86.28,94,3.65,93,3.61,166,6.45,0,0.0
+gemma3_27b_answerable_math_cot,2573,0.343,2384,92.65,189,7.35,2329,90.52,55,2.14,89,3.46,100,3.89,0,0.0
+llama31_8b_answerable_math_cot,2573,0.5117,2192,85.19,381,14.81,1654,64.28,538,20.91,92,3.58,289,11.23,0,0.0
+mistral7b_answerable_math_cot,2573,0.9536,1629,63.31,944,36.69,1180,45.86,449,17.45,197,7.66,747,29.03,0,0.0
+qwen25_7b_answerable_math_cot,2573,0.3279,2380,92.5,193,7.5,2212,85.97,168,6.53,73,2.84,120,4.66,0,0.0
+qwen3_14b_answerable_math_cot,2573,0.3273,2418,93.98,155,6.02,2341,90.98,77,2.99,60,2.33,95,3.69,0,0.0

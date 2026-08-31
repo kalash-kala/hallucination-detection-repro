@@ -1,0 +1,4 @@
+pair,n,dse_threshold,correct_n,correct_pct,incorrect_n,incorrect_pct,correct_high_n,correct_high_pct,correct_low_n,correct_low_pct,incorrect_high_n,incorrect_high_pct,incorrect_low_n,incorrect_low_pct,boundary_n,boundary_pct
+gemma3_12b_advqa,3000,0.3256,1605,53.5,1395,46.5,1400,46.67,205,6.83,868,28.93,527,17.57,0,0.0
+pixtral12b_advqa,3000,0.814,1425,47.5,1575,52.5,1113,37.1,312,10.4,704,23.47,871,29.03,0,0.0
+qwen25vl_advqa,3000,0.814,1758,58.6,1242,41.4,1189,39.63,569,18.97,448,14.93,794,26.47,0,0.0

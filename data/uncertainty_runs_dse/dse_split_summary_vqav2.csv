@@ -1,0 +1,4 @@
+pair,n,dse_threshold,entropy_max,correct_high,correct_low,incorrect_high,incorrect_low,boundary,high_conf_frac,agreement_with_cmetric_category
+gemma3_12b_vqav2_combined_llm_verdict,34991,0.3256,2.3026,19274,3570,6983,5164,0,0.7504,
+pixtral12b_vqav2_combined_llm_verdict,34991,0.9536,2.3026,16211,8126,4434,6220,0,0.59,
+qwen25vl_vqav2_combined_llm_verdict,34991,1.0466,2.3026,17536,8702,2179,6574,0,0.5634,

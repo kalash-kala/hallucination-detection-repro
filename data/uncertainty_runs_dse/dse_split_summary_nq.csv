@@ -1,0 +1,7 @@
+pair,n,dse_threshold,entropy_max,correct_high,correct_low,incorrect_high,incorrect_low,boundary,high_conf_frac,agreement_with_cmetric_category
+gemma_12b_nq_combined_llm_verdict,50000,0.6978,2.3026,21804,2105,16322,9769,0,0.7625,
+gemma_27b_nq_combined_llm_verdict,50000,0.3256,2.3026,24935,3612,13815,7638,0,0.775,
+llama_8b_nq_combined_llm_verdict,50000,1.0931,2.3026,14326,11056,4300,20318,0,0.3725,
+mistral_7b_nq_combined_llm_verdict,50000,1.0931,2.3026,15649,10491,5492,18368,0,0.4228,
+qwen2_5_7b_nq_combined_llm_verdict,50000,0.9536,2.3026,15367,5098,9326,20209,0,0.4939,
+qwen_14b_nq_combined_llm_verdict,50000,0.9536,2.3026,19106,4434,9708,16752,0,0.5763,
