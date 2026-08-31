@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "confidence-shortcut"
+version = "0.1.0"
+description = "Confidence-shortcut study: internal-state extraction, per-pair probing, and report aggregation"
+requires-python = ">=3.11"
+
+# Base install gives components 2 and 3 only. Deliberately NO torch here: csx_probe
+# and csx_report must run on any CPU box, and tests/test_isolation.py enforces that
+# torch never enters their import graph.
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "pyarrow>=15",
+    "scikit-learn>=1.5",
+    "scipy>=1.13",
+    "joblib>=1.4",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Component 1 only. `pip install -e .[extract]`
+extract = [
+    "torch>=2.6",
+    "transformers>=5.5",
+    "pillow>=10",
+]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+csx-store = "csx_extract.verify:main"
+
+[tool.setuptools]
+packages = [
+    "csx_common",
+    "csx_extract",
+    "csx_extract.models",
+    "csx_probe",
+    "csx_probe.store",
+    "csx_probe.store.derive",
+    "csx_probe.arms",
+    "csx_probe.experiments",
+    "csx_report",
+    "csx_report.tables",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+    "needs_artifacts: requires the real on-disk artifacts (not run by default)",
+]

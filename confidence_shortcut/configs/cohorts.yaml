@@ -1,0 +1,75 @@
+# Named cohorts.
+#
+# These are CONVENIENCES FOR COMPONENT 3, not structural commitments. csx_probe
+# never reads this file and never emits a `cohort` column; every value it writes
+# is atomic per pair. csx_report accepts `--cohort <name>` or an arbitrary
+# `--pairs a,b,c` list with equal willingness, so any grouping can be medianed
+# after the fact without refitting anything.
+#
+# Adding a pair to a cohort is an edit here plus a report re-run (seconds).
+
+schema_version: 1
+
+cohorts:
+  qa8:
+    description: >
+      The published draft's grouping: 4 models x {sciq, triviaqa}. This is the
+      1e-4 parity target, so its membership is FROZEN and its pass-rule threshold
+      is the pre-registered literal 6/8 -- not a fraction that happens to equal 6.
+    frozen: true
+    pass_rule: {mode: literal, min_passing: 6, n_pairs: 8}
+    pairs:
+      - llama_sciq
+      - llama_triviaqa
+      - mistral_sciq
+      - mistral_triviaqa
+      - qwen_sciq
+      - qwen_triviaqa
+      - gemma_sciq
+      - gemma_triviaqa
+
+  text:
+    description: 6 models x {sciq, triviaqa, nq}. 17 pairs now, 18 once qwen_nq lands.
+    pass_rule: {mode: fraction, fraction: 0.75}
+    pairs:
+      - llama_sciq
+      - mistral_sciq
+      - qwen_sciq
+      - gemma_sciq
+      - qwen3_14b_sciq
+      - gemma3_27b_sciq
+      - llama_triviaqa
+      - mistral_triviaqa
+      - qwen_triviaqa
+      - gemma_triviaqa
+      - qwen3_14b_triviaqa
+      - gemma3_27b_triviaqa
+      - llama_nq
+      - mistral_nq
+      - qwen_nq
+      - gemma_nq
+      - qwen3_14b_nq
+      - gemma3_27b_nq
+
+  vlm:
+    description: >
+      The full 3 models x 3 datasets grid. All 9 verified present: 100% id
+      coverage between each run CSV and its generations folder, with
+      prompt_token_ids populated on every row.
+    pass_rule: {mode: fraction, fraction: 0.75}
+    pairs:
+      - qwen25vl_advqa
+      - gemma3_12b_advqa
+      - pixtral12b_advqa
+      - qwen25vl_okvqa
+      - gemma3_12b_okvqa
+      - pixtral12b_okvqa
+      - qwen25vl_vqav2
+      - gemma3_12b_vqav2
+      - pixtral12b_vqav2
+
+# Pairs listed in a cohort but marked `status: pending` in pairs.yaml, or whose
+# results are absent, are dropped at report time with a named reason printed
+# above the table -- never silently, since a shrinking denominator would change
+# every median without saying so.
+on_missing: report_and_drop

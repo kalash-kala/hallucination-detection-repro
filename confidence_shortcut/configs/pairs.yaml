@@ -1,0 +1,283 @@
+# Pair registry — the single source of truth for "what pairs exist".
+#
+# Adding a model x dataset pair is a CSV plus an entry here. Never a code change.
+# tests/test_registry.py asserts every CSV in data/uncertainty_runs_dse/ resolves to
+# exactly one entry or is explicitly listed under `out_of_scope`.
+#
+# WHY TAGS ARE EXPLICIT: the same backbone appears under different tags across
+# datasets (`llama` / `llama_8b` / `llama31_8b`), and one tag is actively
+# misleading -- `qwen_14b` in the nq files is Qwen3-14B, NOT a Qwen2.5 variant
+# (confirmed against the run directory nq__Qwen__Qwen3-14B__*). Filename parsing
+# would get that wrong, so canonical tags are declared, not inferred.
+
+schema_version: 1
+
+roots:
+  # Overridable by environment variable of the same name, upper-cased with a CSX_ prefix
+  # (e.g. CSX_UQ_CSV_DIR). Resolution lives in csx_probe/paths.py.
+  uq_csv_dir: /home/kalashkala/hallucination-detection-repro/data/uncertainty_runs_dse
+  store: /data/kalashkala/csx_store
+  generations: /data/kalashkala/semantic_uncertainty_data/uncertainty
+  legacy_full_natural: /data/kalashkala/full_natural_data
+  legacy_dse_arms: /data/kalashkala/dse_data
+  reference_results: /home/kalashkala/recovery-gaps-experiment/dse_results
+
+# ---------------------------------------------------------------------------
+# Backbones. `layers` is the transformer block count (drives hs_* feature width
+# 2*D+1 and the peak-layer bucket ranges).
+# ---------------------------------------------------------------------------
+models:
+  llama:
+    hf_id: meta-llama/Llama-3.1-8B-Instruct
+    layers: 32
+    modality: text
+    aliases: [llama, llama_8b, llama31_8b]
+  mistral:
+    hf_id: mistralai/Mistral-7B-Instruct-v0.3
+    layers: 32
+    modality: text
+    aliases: [mistral, mistral_7b, mistral7b]
+  qwen:
+    hf_id: Qwen/Qwen2.5-7B-Instruct
+    layers: 28
+    modality: text
+    aliases: [qwen, qwen25_7b, qwen2_5_7b]
+  gemma:
+    hf_id: google/gemma-3-12b-it
+    layers: 48
+    modality: text
+    aliases: [gemma, gemma_12b]
+  qwen3_14b:
+    hf_id: Qwen/Qwen3-14B
+    layers: 40
+    modality: text
+    aliases: [qwen3_14b, qwen_14b]
+  gemma3_27b:
+    hf_id: google/gemma-3-27b-it
+    layers: 62
+    modality: text
+    aliases: [gemma3_27b, gemma_27b]
+
+  # VLM backbones. `layers` here is read from each model's cached HF config
+  # (text_config.num_hidden_layers) and is re-resolved from the LOADED model at
+  # extraction time; a disagreement is a hard failure, never a silent override.
+  # It is declared rather than left null so `--plan` can size the job honestly.
+  #
+  # `image_token_ids` is the set of token ids that count as image positions. It
+  # is the ground truth for the image/text segment split, verified two ways: from
+  # each config's `image_token_index`, and by counting occurrences in the stored
+  # `prompt_token_ids` of every generations row.
+  #
+  # NOTE: `gemma3_12b` is the SAME weights as `gemma` above, used in its
+  # vision-language role on the VQA datasets. Kept as a distinct entry because
+  # modality changes the prompt template, the span layout and the feature width.
+  qwen25vl:
+    hf_id: Qwen/Qwen2.5-VL-7B-Instruct
+    layers: 28
+    modality: vlm
+    aliases: [qwen25vl]
+    image_token_ids: [151655]        # <|image_pad|>
+  gemma3_12b:
+    hf_id: google/gemma-3-12b-it
+    layers: 48
+    modality: vlm
+    aliases: [gemma3_12b]
+    image_token_ids: [262144]        # <image_soft_token>, always exactly 256/row
+  pixtral12b:
+    hf_id: mistral-community/pixtral-12b
+    layers: 40
+    modality: vlm
+    aliases: [pixtral12b]
+    # [IMG]=10 and [IMG_BREAK]=12. IMG_BREAK is REQUIRED here: Pixtral emits one
+    # at every patch-row boundary, so an [IMG]-only mask is split into 10-40
+    # blocks and is not a span at all. With both ids the region is exactly
+    # contiguous on all 3,000 advqa rows -- see tests/test_spans.py.
+    image_token_ids: [10, 12]
+
+# ---------------------------------------------------------------------------
+# Datasets. `prompt_template` decides how the teacher-forced span is built:
+#   ranking -> "Question: {q}\nAnswer: {greedy}"  (the qa8 convention; needs no
+#              generations folder -- question + greedy come from the CSV)
+#   chat    -> the processor chat template wrapping `prompt_text`
+#
+# `prompt_text` MUST reproduce the prompt the generation run actually used. It is
+# not a stylistic choice: s_ext is the log-probability of the greedy answer under
+# this prompt, so a different-but-reasonable wording scores the stored answer
+# under a prompt the model never saw. That failure is quiet -- features are still
+# produced, they are just measured against the wrong context. Extraction
+# therefore GATES on the reconstructed prompt_token_ids matching the stored ones
+# exactly, per row (csx_extract/prompts.py).
+#
+# Source: BRIEF_PROMPTS['default'] + make_prompt() in
+# semantic_uncertainty/uncertainty/utils/utils.py:16,453-464.
+#
+# `n_target` is the subsample cap (null = keep the whole pool). 15000 matches
+# 00_make_natural_splits.py's published triviaqa convention (10,500 train /
+# 4,500 test), so the qa8 arms are reproduced rather than re-invented.
+# ---------------------------------------------------------------------------
+datasets:
+  sciq:
+    modality: text
+    prompt_template: ranking
+    n_target: null
+  triviaqa:
+    modality: text
+    prompt_template: ranking
+    n_target: 15000
+  nq:
+    modality: text
+    prompt_template: ranking
+    n_target: 15000
+  vqav2:
+    modality: vlm
+    prompt_template: chat
+    prompt_text: "Answer the following question as briefly as possible.\nQuestion: {question}\nAnswer:"
+    n_target: 15000
+    image_root: /data/kalashkala/vqa_data/vqav2/sampled
+    loader_branch: vqav2
+  okvqa:
+    modality: vlm
+    prompt_template: chat
+    prompt_text: "Answer the following question as briefly as possible.\nQuestion: {question}\nAnswer:"
+    n_target: null
+    image_root: /data/kalashkala/vqa_data/okvqa
+    loader_branch: okvqa
+  advqa:
+    modality: vlm
+    prompt_template: chat
+    prompt_text: "Answer the following question as briefly as possible.\nQuestion: {question}\nAnswer:"
+    n_target: null
+    image_root: /data/kalashkala/vqa_data/coco/val2017
+    loader_branch: advqa
+
+# ---------------------------------------------------------------------------
+# Pairs. `csv` is relative to roots.uq_csv_dir. `generations` is relative to
+# roots.generations and is required ONLY for vlm pairs (it is the sole source of
+# image_path). `status: pending` marks a pair whose data has not landed yet --
+# the registry knows about it, nothing errors, and it activates when the file
+# appears.
+# ---------------------------------------------------------------------------
+pairs:
+  # ---- sciq (6) ----
+  llama_sciq:      {model: llama,      dataset: sciq, csv: uncertainty_run_llama_sciq_combined_llm_verdict_dse_output.csv}
+  mistral_sciq:    {model: mistral,    dataset: sciq, csv: uncertainty_run_mistral_sciq_combined_full_llm_verdict_dse_output.csv}
+  qwen_sciq:       {model: qwen,       dataset: sciq, csv: uncertainty_run_qwen_sciq_combined_full_llm_verdict_dse_output.csv}
+  gemma_sciq:      {model: gemma,      dataset: sciq, csv: uncertainty_run_gemma_sciq_combined_full_llm_verdict_dse_output.csv}
+  qwen3_14b_sciq:  {model: qwen3_14b,  dataset: sciq, csv: uncertainty_run_qwen3_14b_sciq_combined_full_llm_verdict_dse_output.csv}
+  gemma3_27b_sciq: {model: gemma3_27b, dataset: sciq, csv: uncertainty_run_gemma3_27b_sciq_combined_full_llm_verdict_dse_output.csv}
+
+  # ---- triviaqa (6) ----
+  llama_triviaqa:      {model: llama,      dataset: triviaqa, csv: uncertainty_run_llama_triviaqa_combined_50K_llm_verdict_dse_output.csv}
+  mistral_triviaqa:    {model: mistral,    dataset: triviaqa, csv: uncertainty_run_mistral_triviaqa_combined_50K_llm_verdict_dse_output.csv}
+  qwen_triviaqa:       {model: qwen,       dataset: triviaqa, csv: uncertainty_run_qwen_triviaqa_combined_50K_llm_verdict_dse_output.csv}
+  gemma_triviaqa:      {model: gemma,      dataset: triviaqa, csv: uncertainty_run_gemma_triviaqa_combined_50K_llm_verdict_dse_output.csv}
+  qwen3_14b_triviaqa:  {model: qwen3_14b,  dataset: triviaqa, csv: uncertainty_run_qwen3_14b_triviaqa_combined_50K_llm_verdict_dse_output.csv}
+  gemma3_27b_triviaqa: {model: gemma3_27b, dataset: triviaqa, csv: uncertainty_run_gemma3_27b_triviaqa_combined_50K_llm_verdict_dse_output.csv}
+
+  # ---- nq (5 present + 1 pending) ----
+  llama_nq:      {model: llama,      dataset: nq, csv: uncertainty_run_llama_8b_nq_combined_llm_verdict_dse_output.csv}
+  mistral_nq:    {model: mistral,    dataset: nq, csv: uncertainty_run_mistral_7b_nq_combined_llm_verdict_dse_output.csv}
+  gemma_nq:      {model: gemma,      dataset: nq, csv: uncertainty_run_gemma_12b_nq_combined_llm_verdict_dse_output.csv}
+  qwen3_14b_nq:  {model: qwen3_14b,  dataset: nq, csv: uncertainty_run_qwen_14b_nq_combined_llm_verdict_dse_output.csv}
+  gemma3_27b_nq: {model: gemma3_27b, dataset: nq, csv: uncertainty_run_gemma_27b_nq_combined_llm_verdict_dse_output.csv}
+  # Completes the text grid to 6 models x 3 datasets. Landed 2026-08-24; the file
+  # is tagged `qwen2_5_7b`, a seventh spelling of this backbone, which is exactly
+  # why tags are declared here rather than parsed.
+  qwen_nq:
+    model: qwen
+    dataset: nq
+    csv: uncertainty_run_qwen2_5_7b_nq_combined_llm_verdict_dse_output.csv
+
+  # ---- advqa (3) ----
+  qwen25vl_advqa:
+    model: qwen25vl
+    dataset: advqa
+    csv: uncertainty_run_qwen25vl_advqa_combined_llm_verdict_dse_output.csv
+    generations: advqa__Qwen__Qwen2.5-VL-7B-Instruct__seed10__pid1219764__20260817_230332
+  gemma3_12b_advqa:
+    model: gemma3_12b
+    dataset: advqa
+    csv: uncertainty_run_gemma3_12b_advqa_combined_llm_verdict_dse_output.csv
+    generations: advqa__google__gemma-3-12b-it__seed10__pid1431426__20260818_003705
+  pixtral12b_advqa:
+    model: pixtral12b
+    dataset: advqa
+    csv: uncertainty_run_pixtral12b_advqa_combined_llm_verdict_dse_output.csv
+    generations: advqa__mistral-community__pixtral-12b__seed10__pid1607227__20260818_015851
+
+  # ---- okvqa (2 present + 1 pending) ----
+  qwen25vl_okvqa:
+    model: qwen25vl
+    dataset: okvqa
+    csv: uncertainty_run_qwen25vl_okvqa_combined_llm_verdict_dse_output.csv
+    generations: okvqa__Qwen__Qwen2.5-VL-7B-Instruct__seed10__pid332417__20260821_151028
+  # Both okvqa runs below were generated on a different server, so their stored
+  # image_path values carry that server's prefix. `path_rewrite` remaps them.
+  # This is a declared substitution, not a heuristic, and rows.py fails loudly if
+  # any rewritten path does not exist -- see tests/test_rows.py.
+  #
+  # The remap is verified, not assumed: after rewriting, all 14,055 paths are
+  # byte-identical to those in the qwen25vl_okvqa run, which was generated on
+  # THIS server with local paths (same ids, same questions, same image_ids, zero
+  # mismatches). So the two servers' image sets are confirmed identical by an
+  # independent local run rather than by the paths merely resolving.
+  gemma3_12b_okvqa:
+    model: gemma3_12b
+    dataset: okvqa
+    csv: uncertainty_run_gemma3_12b_okvqa_combined_llm_verdict_dse_output.csv
+    generations: okvqa__google__gemma-3-12b-it__seed10__pid1756046__20260821_205931
+    path_rewrite:
+      from: /storage/users/sriramg/kalashabhayk/vqa_data
+      to: /data/kalashkala/vqa_data
+  pixtral12b_okvqa:
+    model: pixtral12b
+    dataset: okvqa
+    csv: uncertainty_run_pixtral12b_okvqa_combined_llm_verdict_dse_output.csv
+    generations: okvqa__mistral-community__pixtral-12b__seed10__pid2913942__20260822_122536
+    path_rewrite:
+      from: /storage/users/sriramg/kalashabhayk/vqa_data
+      to: /data/kalashkala/vqa_data
+
+  # ---- vqav2 (3) ----
+  # Several aborted/partial run folders exist per pair (as few as 1 file). The
+  # folder named here is the one whose combined_generations.jsonl covers 100% of
+  # the CSV's ids -- chosen by id coverage, not by timestamp, because the newest
+  # folder is sometimes the smallest.
+  qwen25vl_vqav2:
+    model: qwen25vl
+    dataset: vqav2
+    csv: uncertainty_run_qwen25vl_vqav2_combined_llm_verdict_dse_output.csv
+    generations: vqav2__Qwen__Qwen2.5-VL-7B-Instruct__seed10__pid1700209__20260819_155431
+  gemma3_12b_vqav2:
+    model: gemma3_12b
+    dataset: vqav2
+    csv: uncertainty_run_gemma3_12b_vqav2_combined_llm_verdict_dse_output.csv
+    generations: vqav2__google__gemma-3-12b-it__seed10__pid1991858__20260820_214025
+  pixtral12b_vqav2:
+    model: pixtral12b
+    dataset: vqav2
+    csv: uncertainty_run_pixtral12b_vqav2_combined_llm_verdict_dse_output.csv
+    generations: vqav2__mistral-community__pixtral-12b__seed10__pid439959__20260821_154914
+
+# ---------------------------------------------------------------------------
+# CSVs present on disk that are deliberately NOT pairs. Listed explicitly so
+# test_registry.py can assert the census is complete: every CSV is either a pair
+# or is named here.
+# ---------------------------------------------------------------------------
+out_of_scope:
+  reason: >
+    answerable_math and answerable_math_cot are out of scope (confirmed 2026-08-23).
+    Non-CoT maths may be reinstated later, at which point these move into `pairs`.
+  csvs:
+    - uncertainty_run_gemma_answerable_math_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_llama_answerable_math_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_mistral_answerable_math_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_qwen_answerable_math_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_qwen3_14b_answerable_math_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_gemma3_27b_answerable_math_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_gemma3_12b_answerable_math_cot_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_gemma3_27b_answerable_math_cot_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_llama31_8b_answerable_math_cot_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_mistral7b_answerable_math_cot_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_qwen25_7b_answerable_math_cot_combined_llm_verdict_dse_output.csv
+    - uncertainty_run_qwen3_14b_answerable_math_cot_combined_llm_verdict_dse_output.csv

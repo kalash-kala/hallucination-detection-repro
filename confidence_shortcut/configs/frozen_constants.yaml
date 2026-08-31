@@ -1,0 +1,188 @@
+# Constants carried verbatim from the published pipeline.
+#
+# Every value here has a named source. Changing one moves the numbers, so they
+# live in config rather than scattered across modules -- but they are NOT knobs:
+# the parity gate depends on them. tests/test_frozen_constants.py asserts the
+# values below match what the reference scripts use.
+
+schema_version: 1
+
+seed: 42                      # ra_common.SEED; the same 42 everywhere
+
+# --- probes -----------------------------------------------------------------
+# stage_a_common.hs_lr / spectral_lr. Note the two differ in max_iter and in
+# whether random_state is set -- reproduced exactly, not harmonised.
+probes:
+  hs:
+    max_iter: 1000
+    solver: lbfgs
+    class_weight: balanced
+    random_state: null
+  spectral:
+    max_iter: 2000
+    solver: lbfgs
+    class_weight: balanced
+    random_state: 42
+  # stage_a_common.score_pos: predict_proba[:,1], rank-identical to
+  # decision_function for LR (the sigmoid is strictly increasing), so every
+  # AUROC/bootstrap consumer is unchanged.
+  score: predict_proba_pos
+
+# --- feature transform ------------------------------------------------------
+# stage_a_common.make_transform. Fitted on TRAIN rows only, always.
+transform:
+  pca:
+    svd_solver: randomized
+    random_state: 42
+    # n_components = min(pca_dim, n_features, n_samples - 1)
+  scaler: StandardScaler
+
+# --- feature derivation -----------------------------------------------------
+# 06_fit_analyze.py
+features:
+  top_k_grid: [5, 10, 25, 50]
+  pca_dim: 100
+  sink_k: 10
+  pca_grid: [null, 100]
+  # Extraction stores top-K per head. 50 covers top_k_grid's maximum with nothing
+  # lost. attnlogdet is NOT a top-k feature -- it is a mean over ALL positions --
+  # so attn_logdet [L,H] is stored separately or that family breaks silently.
+  extract_top_k: 50
+
+# --- arm construction -------------------------------------------------------
+arms:
+  test_fraction: 0.30
+  categories: [incorrect_high, correct_high, incorrect_low, correct_low]
+  short: {incorrect_high: IH, correct_high: CH, incorrect_low: IL, correct_low: CL}
+  # 26_build_balanced2_arm.py
+  balanced2_quota: {train: 245, test: 105}
+  # 16_build_matched_arm.py -- stratum key is ROUNDED, which is why matched shows
+  # ~5e-3 residual entropy drift.
+  matched:
+    stratum_key: {round_decimals: 12}
+    ratio: [1, 1]
+    tol: 1.0e-9
+  # 27_build_matched2_arm.py -- stratum key is the RAW float (only -0.0
+  # normalised), which is why matched2 hits 0.500 exactly.
+  matched2:
+    stratum_key: raw_float
+    max_pq: 12
+    tol: 1.0e-9
+    # one ratio per split, maximising sum of per-band n_eff subject to no band
+    # falling below its r=1:1 value
+    dominance_constraint: true
+  min_per_class: 10
+
+# --- alpha ladder -----------------------------------------------------------
+# 31_alpha_arms.py / 32_alpha_rotation.py
+alpha:
+  alphas: [0.0, 0.25, 0.5, 0.75, 1.0]
+  n_placebo: 20
+  n_boot: 100
+  n_boot_ref: 30
+  # placebo draw seed: default_rng(42 + 1000*(draw+1))
+  placebo_seed_base: 42
+  placebo_seed_stride: 1000
+  ridge_alpha: 1.0            # the label-free entropy reference direction
+  # The null is ALL 20x20 outer differences placebo(a=1)_i - placebo(a=0)_j
+  # (400 values), and the bar is that distribution's 95th percentile.
+  null_percentile: 95.0
+
+# --- bootstrap --------------------------------------------------------------
+bootstrap:
+  row_level_n: 1000           # run_renorm_routed_vs._boot, component 2
+  hier_n: 1000                # hier_median_ci, component 3
+  confound_grid_n: 100        # 48/50 use 100: point estimates only, null comes
+                              # from the 20 draws
+  ci: [2.5, 97.5]
+
+# --- confound controls ------------------------------------------------------
+confounds:
+  n_draws: 20
+  # 49_build_sizeonly_arms.py. zlib.crc32 deliberately, NOT Python's hash():
+  # str hashing is per-process randomised, so hash() would not reproduce.
+  sizeonly_seed: "(42 + zlib.crc32(f'{pair}|{tgt}|{split}|{draw}')) % 2**32"
+  sizeonly_apportionment: largest_remainder
+
+# --- contrasts --------------------------------------------------------------
+# 25_transfer_grid.py. Orientation is ALWAYS larger => more incorrect, with no
+# per-head sign flips: sep scoring 0.000 on IHvCL is the informative observation,
+# not a bug. CHvI/CLvI are encoded as (pos=I, neg=CH/CL), identically the
+# 1-AUROC convention with one less sign flip to get wrong.
+contrasts:
+  pooled: [IvC]
+  admissible: [IHvCH, ILvCL, IHvC, ILvC, CHvI, CLvI]
+  definitional: [IHvCL, ILvCH]
+  shortcut_meter: IHvCL
+  derived: [cell_min, cell_mean, cell_spread, shortcut_IHvCL]
+
+families:
+  hs: [hs_wide, hs_narrow, hs_peak_only]
+  spectral: [lapeigvals, attn_eigvals, attnlogdet, sink]
+
+heads: [g, sep, entropy_only]
+
+arm_order: [dse_natural, dse_balanced2, dse_matched, dse_matched2]
+
+# --- routing (Part C) -------------------------------------------------------
+# 54_routed_vs_generalist_fixedC.py, 64_prior_corrected_pooling.py, 58_sr_xauc.py.
+routing:
+  # (incorrect, correct) category per band. HI = low entropy = confident.
+  bands: {HI: [IH, CH], LO: [IL, CL]}
+  # A band expert's negatives: `same_band` uses its own band's correct rows;
+  # `pooled` uses both bands' (the M2 variant). 54.fit_expert's `neg_mode`.
+  c_pool: [CH, CL]
+  route_threshold: 0.5        # 54.ROUTE_T -- p(HI) >= 0.5 routes to the HI expert
+  routers: [oracle, sampled, greedy]
+  # `oracle` is computed and NEVER tabled: it is not deployable (you would need
+  # the answer to know the band) and exists only because the affine-invariance
+  # gate is undefined without it.
+  presented_routers: [sampled, greedy]
+  # 64: Platt is 2 parameters on thousands of rows, so regularisation would only
+  # bias the calibration being sought. class_weight is deliberately None -- the
+  # experts are already fit `class_weight='balanced'`, which re-imposes a 50/50
+  # prior, and carrying that into calibration would defeat the whole point.
+  platt:
+    C: 1.0e+06
+    class_weight: null
+    solver: lbfgs
+    max_iter: 1000
+  ece_bins: 10
+  # Gate tolerances. affine_tol is the within-band identity between `z` and
+  # `platt_prior` under ORACLE routing (published: 0.00e+00, 8/8).
+  affine_tol: 1.0e-09
+  repro_tol: 1.0e-09
+  # The hier variant's out-of-fold router labelling. Refit the WHOLE pipeline
+  # inside each fold -- a router fit on all of train then asked about those same
+  # rows predicts at training accuracy, its bands nearly equal the true bands,
+  # and `hier` silently collapses into `spec1_z`.
+  hier_folds: 5
+
+# --- SR-xAUC (component 3) --------------------------------------------------
+# 58_sr_xauc.py / SR-xAUC_Calculation_Guide.md.
+srxauc:
+  # The four atomic confidence-conditioned xAUCs (guide §2). Order is fixed so
+  # the limiting-cell labels are stable across runs.
+  atomic: [IHvCH, IHvCL, ILvCH, ILvCL]
+  # Guide §5: the minimisation runs over ALL FOUR test arms.
+  test_arms: [dse_natural, dse_balanced2, dse_matched, dse_matched2]
+  train_primary: [dse_natural]
+  train_stress: [dse_natural, dse_matched2]
+  # Unit-level bootstrap ONLY: resamples evaluation units over their per-unit
+  # minima. The guide's within-unit example resampling is impossible from
+  # per-cell AUROCs, so this interval is narrower than §10's and is labelled so.
+  n_boot: 5000
+  ci: [2.5, 97.5]
+  # `entropy_only` scores 0.000 on the band-conditioned cells BY CONSTRUCTION --
+  # the bands are cut from entropy. It carries a mandatory footnote and is
+  # refused a place in any ranked comparison.
+  unranked: [entropy_only]
+
+# --- band orientation -------------------------------------------------------
+# H = LOW entropy = HIGH confidence. Several conclusions invert if this is wrong,
+# so it is asserted at load time rather than assumed
+# (CONFIDENCE_ORTHOGONALITY_README.md Sec 0).
+band:
+  high_confidence: low_entropy
+  hi_label: H
+  lo_label: L

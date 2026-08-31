@@ -1,0 +1,88 @@
+# Regularisation policy: how `C` is resolved for each (family, pair).
+#
+# `C` is the one quantity that must be decided BEFORE component 2 fits anything,
+# because it is an input to the fit rather than an output. Making it per-PAIR
+# (rather than per-family-medianed-over-a-cohort, as the published run did) is
+# what lets a new model or dataset be added without invalidating anything already
+# computed: a new pair selects its own C from its own 4 arm-units, and no
+# existing pair is touched.
+
+schema_version: 1
+
+# The candidate grid, identical to 53_c_sweep.py / 54a_select_c_cv.py.
+c_grid: [1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2, 3.0e-2, 1.0e-1, 3.0e-1, 1.0, 10.0]
+
+# The fitting space the transfer grid and alpha rotation actually use. The
+# published c_selected.json carries five spaces; `native` is the one whose values
+# run_stage2_selected_c.sh used and the draft prints.
+#
+# TRAP: greedy_mean_std|attn_eigvals is 0.03, but the run used native's 0.1.
+# Reading the wrong space silently changes attn_eigvals everywhere.
+space: native
+
+selection:
+  # 5-fold StratifiedKFold(shuffle=True, random_state=42) strictly inside each
+  # unit's TRAIN split; scaler/PCA refit inside each fold (fitting it on data
+  # including the held-out fold leaks); LR refit per candidate C; per-unit best =
+  # argmax mean-fold AUROC. Unchanged from the published protocol.
+  n_folds: 5
+  seed: 42
+  target: incorrect
+
+  # A median over an even number of units lands BETWEEN grid points whenever the
+  # middle two differ (real observed values: 0.00055, 0.065). Snap to the nearest
+  # grid point on the log scale; ties go to the LOWER C, i.e. more regularisation.
+  # Without this, pairs get fit at C values no CV curve ever evaluated.
+  snap: {scale: log10, tie_break: lower}
+
+  # sink's frozen pca_dim was itself chosen with C pinned at 1.0, so selecting C
+  # with that stale choice frozen would freeze a decision made under the wrong
+  # capacity. sink searches the (pca_dim, C) product; per-pair resolution picks
+  # the winning pca branch by mean CV AUROC first, then medians C within it.
+  joint_pca_families: [sink]
+
+modes:
+  # ---------------------------------------------------------------------------
+  # pinned -- the frozen per-family table, used verbatim.
+  # REQUIRED for the 8 qa8 pairs: the published numbers were fit at a single
+  # per-family C, so the 1e-4 parity gate depends on reproducing exactly this.
+  # Source: scripts/dse_splits/run_stage2_selected_c.sh (the `native` values).
+  # ---------------------------------------------------------------------------
+  pinned:
+    hs_wide:      1.0e-4
+    hs_narrow:    1.0e-4
+    hs_peak_only: 1.0e-4
+    sink:         1.0e-4
+    lapeigvals:   1.0      # the no-op control: CV independently returned the default
+    attn_eigvals: 1.0e-1
+    attnlogdet:   1.0e-3
+
+# Per-pair assignment. Anything absent gets `default`.
+default: per_pair
+
+assignment:
+  llama_sciq:       pinned
+  llama_triviaqa:   pinned
+  mistral_sciq:     pinned
+  mistral_triviaqa: pinned
+  qwen_sciq:        pinned
+  qwen_triviaqa:    pinned
+  gemma_sciq:       pinned
+  gemma_triviaqa:   pinned
+
+# Measured agreement between the two modes, re-resolving per-pair from the stored
+# c_selection_long.csv (native space, 4 arm-units per pair) and comparing with the
+# pinned table. 50 of 56 (family, pair) cells are IDENTICAL. hs_wide and
+# attn_eigvals are 8/8 exact. The six that differ:
+#
+#   attnlogdet   llama_sciq       1e-3 -> 0.03   (2 grid steps)
+#   attnlogdet   qwen_sciq        1e-3 -> 0.01   (1)
+#   hs_narrow    gemma_sciq       1e-4 -> 1e-3   (1)
+#   hs_peak_only gemma_sciq       1e-4 -> 1e-3   (1)
+#   lapeigvals   llama_sciq       1.0  -> 10.0   (1)
+#   sink         gemma_triviaqa   1e-4 -> 1.0    (6 -- its PCA-100 branch wins on
+#                                                 that pair, where C=1.0 is the
+#                                                 right scale; not noise)
+#
+# Recorded here so the choice of `per_pair` as the default is a checked decision
+# rather than an assumption. qa8 stays pinned, so nothing published moves.
